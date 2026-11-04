@@ -95,6 +95,12 @@ Screenshots of the application's login page, Kanban board, task details, multi-t
 - [System Architecture](docs/architecture.md)
 - [Database ERD](docs/database-erd.md)
 
+
+**Application Screenshots**
+
+Screenshots are available in the [screenshots directory](screenshots/).
+
+
 **Testing**
 
 The application has been tested for authentication, tenant isolation, access permissions, task movements, and real-time collaboration.
