@@ -87,7 +87,7 @@ export default function App() {
   const [savingTask, setSavingTask] = useState(false);
 
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+ 
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,7 +117,7 @@ export default function App() {
   );
 
   const loadBoardData = useCallback(
-    async (selectedTenantId, selectedBoardId, showNotice = false) => {
+    async (selectedTenantId, selectedBoardId) => {
       if (!selectedTenantId || !selectedBoardId) {
         return false;
       }
@@ -143,10 +143,6 @@ export default function App() {
 
         setColumns(extractList(columnData, "columns"));
         setTasks(extractList(taskData, "tasks"));
-
-        if (showNotice) {
-          setNotice("Board refreshed successfully.");
-        }
 
         return true;
       } catch (err) {
@@ -286,7 +282,6 @@ export default function App() {
     event.preventDefault();
 
     setError("");
-    setNotice("");
     setLoading(true);
 
     try {
@@ -331,8 +326,6 @@ export default function App() {
     movingRef.current = true;
     setBusyTaskId(entry.taskId);
     setError("");
-    setNotice("");
-
     try {
       const path =
         `/api/tenants/${tenantId}/boards/${boardId}` +
@@ -364,11 +357,9 @@ export default function App() {
       }
 
       const refreshed = await loadBoardData(tenantId, boardId);
-      setNotice(
-        refreshed
-          ? `Task movement ${direction === "undo" ? "undone" : "redone"} successfully.`
-          : "Movement saved, but board refresh failed."
-      );
+      if (!refreshed) {
+  setError("Movement saved, but board refresh failed.");
+}
     } catch (err) {
       if (err.status === 409 || err.status === 404) {
         clearMovementHistory();
@@ -400,7 +391,6 @@ export default function App() {
     setSelectedTask(null);
     clearMovementHistory();
     setError("");
-    setNotice("");
   }
 
   function handleOrganizationChange(event) {
@@ -416,7 +406,6 @@ export default function App() {
     setSelectedTask(null);
     clearMovementHistory();
     setError("");
-    setNotice("");
   }
 
   function handleTenantChange(event) {
@@ -430,7 +419,6 @@ export default function App() {
     setSelectedTask(null);
     clearMovementHistory();
     setError("");
-    setNotice("");
   }
 
   function handleBoardChange(event) {
@@ -442,14 +430,11 @@ export default function App() {
     setSelectedTask(null);
     clearMovementHistory();
     setError("");
-    setNotice("");
   }
 
   async function handleRefresh() {
     if (!tenantId || !boardId || refreshing) return;
-
-    setNotice("");
-    await loadBoardData(tenantId, boardId, true);
+    await loadBoardData(tenantId, boardId);
   }
 
   async function handleCreateTask(event) {
@@ -463,8 +448,6 @@ export default function App() {
 
     setLoading(true);
     setError("");
-    setNotice("");
-
     try {
       const base =
         `/api/tenants/${tenantId}/boards/${boardId}`;
@@ -480,10 +463,9 @@ export default function App() {
 
       setNewTask("");
 
-      const success = await loadBoardData(tenantId, boardId);
-
-      if (success) {
-        setNotice("Task created successfully.");
+      const refreshed = await loadBoardData(tenantId, boardId);
+      if (!refreshed) {
+        setError("Task created, but the board could not be refreshed.");
       }
     } catch (err) {
       setError(err.message);
@@ -500,8 +482,6 @@ export default function App() {
     movingRef.current = true;
     setBusyTaskId(task.id);
     setError("");
-    setNotice("");
-
     try {
       const path =
         `/api/tenants/${tenantId}` +
@@ -518,7 +498,10 @@ export default function App() {
       });
 
       clearMovementHistory();
-      const success = await loadBoardData(tenantId, boardId);
+      const refreshed = await loadBoardData(tenantId, boardId);
+      if (!refreshed) {
+        setError("Task moved, but the board could not be refreshed.");
+      }
 
       try {
         const activity = await findMoveActivity(
@@ -531,18 +514,11 @@ export default function App() {
             activityId: activity.id,
             version: moveResult.task.version,
           });
-        } else {
-          setNotice("Task moved. Undo is unavailable for this movement.");
         }
       } catch (historyError) {
         console.warn("Unable to load movement activity:", historyError);
-        setNotice("Task moved. Unable to load Undo history.");
       }
 
-      if (success) {
-        
-        setNotice((previous) => previous || "Task moved successfully.");
-      }
     } catch (err) {
       await loadBoardData(tenantId, boardId);
       setError(err.message);
@@ -648,7 +624,6 @@ export default function App() {
 
   function handleTaskClick(task) {
     setError("");
-    setNotice("");
     setSelectedTask(task);
   }
 
@@ -665,8 +640,6 @@ export default function App() {
 
     setSavingTask(true);
     setError("");
-    setNotice("");
-
     try {
       const path =
         `/api/tenants/${tenantId}` +
@@ -685,11 +658,8 @@ export default function App() {
       setSelectedTask(null);
       clearMovementHistory();
 
-      const success = await loadBoardData(tenantId, boardId);
-
-      if (success) {
-        setNotice("Task updated successfully.");
-      } else {
+      const refreshed = await loadBoardData(tenantId, boardId);
+      if (!refreshed) {
         setError("Task saved, but the board could not be refreshed.");
       }
 
@@ -876,11 +846,7 @@ export default function App() {
           </div>
         )}
 
-        {notice && !error && (
-          <div className="feedback success" role="status">
-            {notice}
-          </div>
-        )}
+      
 
         {boardId && (
           <form
