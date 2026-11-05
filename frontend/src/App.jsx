@@ -77,6 +77,13 @@ const [password, setPassword] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [organizationsLoaded, setOrganizationsLoaded] = useState(false);
+  const [showCreateOrganization, setShowCreateOrganization] = useState(false);
+  const [branchName, setBranchName] = useState("");
+  const [showCreateBranch, setShowCreateBranch] = useState(false);
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [boardName, setBoardName] = useState("");
+  const [showCreateBoard, setShowCreateBoard] = useState(false);
+  const [creatingBoard, setCreatingBoard] = useState(false);
 
   const [tenants, setTenants] = useState([]);
   const [tenantId, setTenantId] = useState("");
@@ -120,6 +127,8 @@ const [password, setPassword] = useState("");
   const selectedBoard = boards.find(
     (board) => board.id === boardId
   );
+  const selectedOrganization = organizations.find((org) => org.id === organizationId);
+  const isOrgAdmin = selectedOrganization?.role === "ORG_ADMIN";
 
   const loadBoardData = useCallback(
     async (selectedTenantId, selectedBoardId) => {
@@ -358,15 +367,93 @@ async function handleCreateWorkspace(event) {
       throw new Error("Organization was not returned by the server.");
     }
 
-    setOrganizations((previous) => [...previous, organization]);
+    boardRequestRef.current += 1;
+    setTenants([]);
+    setTenantId("");
+    setBoards([]);
+    setBoardId("");
+    setColumns([]);
+    setTasks([]);
+    setSelectedTask(null);
+    clearMovementHistory();
+    setOrganizations((previous) => [...previous, { ...organization, role: "ORG_ADMIN" }]);
     setOrganizationId(organization.id);
     setWorkspaceName("");
+    setShowCreateOrganization(false);
   } catch (err) {
     setError(err.message);
   } finally {
     setCreatingWorkspace(false);
   }
 }
+
+  async function handleCreateBranch(event) {
+    event.preventDefault();
+    const name = branchName.trim();
+    const currentOrganizationId = organizationId;
+    if (!name || !currentOrganizationId || !isOrgAdmin) return;
+
+    setCreatingBranch(true);
+    setError("");
+    try {
+      const slug = name.toLowerCase().normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "").slice(0, 45) || "branch";
+      const data = await request(`/api/organizations/${currentOrganizationId}/tenants`, {
+        method: "POST",
+        body: JSON.stringify({ name, slug: `${slug}-${crypto.randomUUID().slice(0, 8)}` }),
+      });
+      if (!data.tenant?.id) throw new Error("Branch was not returned by the server.");
+
+      boardRequestRef.current += 1;
+      setTenants((previous) => [...previous, data.tenant]);
+      setTenantId(data.tenant.id);
+      setBoards([]);
+      setBoardId("");
+      setColumns([]);
+      setTasks([]);
+      setSelectedTask(null);
+      clearMovementHistory();
+      setBranchName("");
+      setShowCreateBranch(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreatingBranch(false);
+    }
+  }
+
+  async function handleCreateBoard(event) {
+    event.preventDefault();
+    const name = boardName.trim();
+    const currentTenantId = tenantId;
+    if (!name || !currentTenantId) return;
+
+    setCreatingBoard(true);
+    setError("");
+    try {
+      const data = await request(`/api/tenants/${currentTenantId}/boards`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+      if (!data.board?.id) throw new Error("Board was not returned by the server.");
+
+      boardRequestRef.current += 1;
+      setBoards((previous) => [data.board, ...previous]);
+      setBoardId(data.board.id);
+      setColumns([]);
+      setTasks([]);
+      setSelectedTask(null);
+      clearMovementHistory();
+      setBoardName("");
+      setShowCreateBoard(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreatingBoard(false);
+    }
+  }
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -486,10 +573,18 @@ async function handleCreateWorkspace(event) {
   clearMovementHistory();
   setError("");
   setOrganizationsLoaded(false);
+  setShowCreateOrganization(false);
+  setShowCreateBranch(false);
+  setShowCreateBoard(false);
+  setWorkspaceName("");
+  setBranchName("");
+  setBoardName("");
 }
   function handleOrganizationChange(event) {
     boardRequestRef.current += 1;
 
+    setShowCreateBranch(false);
+    setShowCreateBoard(false);
     setOrganizationId(event.target.value);
     setTenants([]);
     setTenantId("");
@@ -505,6 +600,7 @@ async function handleCreateWorkspace(event) {
   function handleTenantChange(event) {
     boardRequestRef.current += 1;
 
+    setShowCreateBoard(false);
     setTenantId(event.target.value);
     setBoards([]);
     setBoardId("");
@@ -781,44 +877,6 @@ async function handleCreateWorkspace(event) {
     }
   }
 
-  if (token && organizationsLoaded && organizations.length === 0) {
-  return (
-    <div className="login-page">
-      <form className="login-card" onSubmit={handleCreateWorkspace}>
-        <h1>Create Workspace</h1>
-        <p>Set up your first Kanban organization.</p>
-
-        <label htmlFor="workspaceName">Organization Name</label>
-        <input
-          id="workspaceName"
-          type="text"
-          value={workspaceName}
-          onChange={(event) => setWorkspaceName(event.target.value)}
-          maxLength={100}
-          required
-        />
-
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-
-        <button type="submit" disabled={creatingWorkspace}>
-          {creatingWorkspace ? "Creating..." : "Create Organization"}
-        </button>
-
-        <button
-          type="button"
-          className="secondary"
-          onClick={signOut}
-        >
-          Sign out
-        </button>
-      </form>
-    </div>
-  );
-}
   if (!token) {
     return (
       <div className="login-page">
@@ -942,6 +1000,22 @@ async function handleCreateWorkspace(event) {
           ))}
         </select>
 
+        <button type="button" className="secondary"
+          onClick={() => setShowCreateOrganization((previous) => !previous)}>
+          + Create Organization
+        </button>
+        {showCreateOrganization && (
+          <form onSubmit={handleCreateWorkspace}>
+            <label htmlFor="workspaceName">Organization Name</label>
+            <input id="workspaceName" type="text" value={workspaceName}
+              onChange={(event) => setWorkspaceName(event.target.value)}
+              maxLength={100} placeholder="Enter organization name" required />
+            <button type="submit" disabled={creatingWorkspace}>
+              {creatingWorkspace ? "Creating..." : "Save Organization"}
+            </button>
+          </form>
+        )}
+
         <label htmlFor="tenant">Branch</label>
         <select
           id="tenant"
@@ -957,6 +1031,26 @@ async function handleCreateWorkspace(event) {
           ))}
         </select>
 
+        {organizationId && isOrgAdmin && (
+          <>
+            <button type="button" className="secondary"
+              onClick={() => setShowCreateBranch((previous) => !previous)}>
+              + Create Branch
+            </button>
+            {showCreateBranch && (
+              <form onSubmit={handleCreateBranch}>
+                <label htmlFor="branchName">Branch Name</label>
+                <input id="branchName" type="text" value={branchName}
+                  onChange={(event) => setBranchName(event.target.value)}
+                  maxLength={100} placeholder="Example: Hyderabad" required />
+                <button type="submit" disabled={creatingBranch}>
+                  {creatingBranch ? "Creating..." : "Save Branch"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+
         <label htmlFor="board">Board</label>
         <select
           id="board"
@@ -971,6 +1065,26 @@ async function handleCreateWorkspace(event) {
             </option>
           ))}
         </select>
+
+        {tenantId && (
+          <>
+            <button type="button" className="secondary"
+              onClick={() => setShowCreateBoard((previous) => !previous)}>
+              + Create Board
+            </button>
+            {showCreateBoard && (
+              <form onSubmit={handleCreateBoard}>
+                <label htmlFor="boardName">Board Name</label>
+                <input id="boardName" type="text" value={boardName}
+                  onChange={(event) => setBoardName(event.target.value)}
+                  maxLength={100} placeholder="Example: Project Kanban Board" required />
+                <button type="submit" disabled={creatingBoard}>
+                  {creatingBoard ? "Creating..." : "Save Board"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
 
         <button
           type="button"
@@ -1112,7 +1226,13 @@ async function handleCreateWorkspace(event) {
 
         {!boardId && (
           <p className="muted">
-            Select an organization, branch, and board to continue.
+            {!organizationsLoaded
+              ? "Loading your organizations..."
+              : !organizationId
+                ? "Select or create an organization to get started."
+                : !tenantId
+                  ? "Select a branch or create one if you are an organization administrator."
+                  : "Select a board or create one if you have administrator access."}
           </p>
         )}
       </main>
