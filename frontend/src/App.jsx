@@ -781,8 +781,7 @@ async function handleCreateWorkspace(event) {
     }
   }
 
-  if (!token) {
-    if (organizationsLoaded && organizations.length === 0) {
+  if (token && organizationsLoaded && organizations.length === 0) {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={handleCreateWorkspace}>
@@ -820,9 +819,10 @@ async function handleCreateWorkspace(event) {
     </div>
   );
 }
-  return (
-    <div className="login-page">
-      <form
+  if (!token) {
+    return (
+      <div className="login-page">
+        <form
   key={authMode}
   className="login-card"
   autoComplete={authMode === "register" ? "off" : "on"}
