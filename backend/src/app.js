@@ -11,11 +11,17 @@ const columnRoutes = require("./routes/columnRoutes");
 
 const app = express();
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  ...(process.env.FRONTEND_URL || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+];
+
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:5174"
-  ],
+  origin: allowedOrigins,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));

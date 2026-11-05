@@ -1,5 +1,11 @@
 const prisma = require("../config/prisma");
 
+const DEFAULT_COLUMNS = [
+  { name: "To Do", position: 0 },
+  { name: "In Progress", position: 1 },
+  { name: "Done", position: 2 }
+];
+
 async function createBoard(req, res) {
   try {
     const { tenantId } = req.params;
@@ -10,19 +16,41 @@ async function createBoard(req, res) {
       !name.trim() ||
       name.trim().length > 100 ||
       (description !== undefined &&
-        (typeof description !== "string" || description.length > 2000))
+        (typeof description !== "string" ||
+          description.length > 2000))
     ) {
       return res.status(400).json({
         message: "Enter a valid board name and description"
       });
     }
 
-    const board = await prisma.board.create({
-      data: {
-        tenantId,
-        name: name.trim(),
-        description: description || null
-      }
+    // Create the board and its default columns together.
+    const board = await prisma.$transaction(async (tx) => {
+      const newBoard = await tx.board.create({
+        data: {
+          tenantId,
+          name: name.trim(),
+          description: description || null
+        }
+      });
+
+      await tx.column.createMany({
+        data: DEFAULT_COLUMNS.map((column) => ({
+          tenantId,
+          boardId: newBoard.id,
+          name: column.name,
+          position: column.position
+        }))
+      });
+
+      return tx.board.findUnique({
+        where: { id: newBoard.id },
+        include: {
+          columns: {
+            orderBy: { position: "asc" }
+          }
+        }
+      });
     });
 
     return res.status(201).json({

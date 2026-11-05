@@ -67,11 +67,16 @@ export default function App() {
   const [token, setToken] = useState(
     () => localStorage.getItem(TOKEN_KEY) || ""
   );
-  const [email, setEmail] = useState("test@example.com");
-  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState("login");
+const [name, setName] = useState("");
+const [email, setEmail] = useState("");
+const [password, setPassword] = useState("");
 
   const [organizations, setOrganizations] = useState([]);
   const [organizationId, setOrganizationId] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [organizationsLoaded, setOrganizationsLoaded] = useState(false);
 
   const [tenants, setTenants] = useState([]);
   const [tenantId, setTenantId] = useState("");
@@ -166,30 +171,42 @@ export default function App() {
   }, [tenantId, boardId, loadBoardData]);
 
   useEffect(() => {
-    if (!token) return;
+  if (!token) {
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    async function fetchOrganizations() {
-      try {
-        const data = await request("/api/organizations");
+  async function fetchOrganizations() {
+    setOrganizationsLoaded(false);
 
-        if (cancelled) return;
 
-        const items = extractList(data, "organizations");
-        setOrganizations(items);
-        setOrganizationId(items[0]?.id || "");
-      } catch (err) {
-        if (!cancelled) setError(err.message);
+    try {
+      const data = await request("/api/organizations");
+
+      if (cancelled) return;
+
+      const items = extractList(data, "organizations");
+
+      setOrganizations(items);
+      setOrganizationId(items[0]?.id || "");
+    } catch (err) {
+      if (!cancelled) {
+        setError(err.message);
+      }
+    } finally {
+      if (!cancelled) {
+        setOrganizationsLoaded(true);
       }
     }
+  }
 
-    void fetchOrganizations();
+  void fetchOrganizations();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  return () => {
+    cancelled = true;
+  };
+}, [token]);
 
   useEffect(() => {
     if (!token || !organizationId) return;
@@ -277,6 +294,79 @@ export default function App() {
       cancelled = true;
     };
   }, [token, tenantId, boardId]);
+
+  async function handleRegister(event) {
+  event.preventDefault();
+
+  setError("");
+  setLoading(true);
+
+  try {
+    const data = await request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim(),
+        password
+      })
+    });
+
+    if (!data.token) {
+      throw new Error("Registration response did not include a token.");
+    }
+
+    localStorage.setItem(TOKEN_KEY, data.token);
+    setToken(data.token);
+    setPassword("");
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+async function handleCreateWorkspace(event) {
+  event.preventDefault();
+
+  const name = workspaceName.trim();
+
+  if (!name) return;
+
+  setCreatingWorkspace(true);
+  setError("");
+
+  try {
+    const slug =
+      name
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 45) || "workspace";
+
+    const data = await request("/api/organizations", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        slug: `${slug}-${crypto.randomUUID().slice(0, 8)}`
+      })
+    });
+
+    const organization = data.organization;
+
+    if (!organization?.id) {
+      throw new Error("Organization was not returned by the server.");
+    }
+
+    setOrganizations((previous) => [...previous, organization]);
+    setOrganizationId(organization.id);
+    setWorkspaceName("");
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setCreatingWorkspace(false);
+  }
+}
 
   async function handleLogin(event) {
     event.preventDefault();
@@ -373,26 +463,30 @@ export default function App() {
   }
 
   function signOut() {
-    boardRequestRef.current += 1;
+  boardRequestRef.current += 1;
 
-    localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 
-    setToken("");
-    setPassword("");
-    setOrganizations([]);
-    setOrganizationId("");
-    setTenants([]);
-    setTenantId("");
-    setBoards([]);
-    setBoardId("");
-    setColumns([]);
-    setTasks([]);
-    setNewTask("");
-    setSelectedTask(null);
-    clearMovementHistory();
-    setError("");
-  }
+  setToken("");
+  setAuthMode("login");
+  setName("");
+  setEmail("");
+  setPassword("");
 
+  setOrganizations([]);
+  setOrganizationId("");
+  setTenants([]);
+  setTenantId("");
+  setBoards([]);
+  setBoardId("");
+  setColumns([]);
+  setTasks([]);
+  setNewTask("");
+  setSelectedTask(null);
+  clearMovementHistory();
+  setError("");
+  setOrganizationsLoaded(false);
+}
   function handleOrganizationChange(event) {
     boardRequestRef.current += 1;
 
@@ -688,47 +782,143 @@ export default function App() {
   }
 
   if (!token) {
-    return (
-      <div className="login-page">
-        <form className="login-card" onSubmit={handleLogin}>
-          <h1>Kanban</h1>
-          <p>Sign in to your workspace</p>
+    if (organizationsLoaded && organizations.length === 0) {
+  return (
+    <div className="login-page">
+      <form className="login-card" onSubmit={handleCreateWorkspace}>
+        <h1>Create Workspace</h1>
+        <p>Set up your first Kanban organization.</p>
 
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(event) =>
-              setEmail(event.target.value)
-            }
-            required
-          />
+        <label htmlFor="workspaceName">Organization Name</label>
+        <input
+          id="workspaceName"
+          type="text"
+          value={workspaceName}
+          onChange={(event) => setWorkspaceName(event.target.value)}
+          maxLength={100}
+          required
+        />
 
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(event) =>
-              setPassword(event.target.value)
-            }
-            required
-          />
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
 
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
+        <button type="submit" disabled={creatingWorkspace}>
+          {creatingWorkspace ? "Creating..." : "Create Organization"}
+        </button>
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-      </div>
-    );
+        <button
+          type="button"
+          className="secondary"
+          onClick={signOut}
+        >
+          Sign out
+        </button>
+      </form>
+    </div>
+  );
+}
+  return (
+    <div className="login-page">
+      <form
+  key={authMode}
+  className="login-card"
+  autoComplete={authMode === "register" ? "off" : "on"}
+  onSubmit={authMode === "register" ? handleRegister : handleLogin}
+>
+        <h1>Kanban</h1>
+
+        <p>
+          {authMode === "register"
+            ? "Create your account"
+            : "Sign in to your workspace"}
+        </p>
+
+        {authMode === "register" && (
+          <>
+        
+           <label htmlFor="name">Full Name</label>
+<input
+  id="name"
+  type="text"
+  value={name}
+  onChange={(event) => setName(event.target.value)}
+  autoComplete="name"
+  required
+  maxLength={100}
+/>
+          </>
+        )}
+
+       <label htmlFor="email">Email</label>
+<input
+  id="email"
+  type="email"
+  value={email}
+  onChange={(event) => setEmail(event.target.value)}
+  autoComplete={authMode === "register" ? "off" : "username"}
+  required
+/>
+
+        <label htmlFor="password">Password</label>
+       <input
+  id="password"
+  type="password"
+  value={password}
+  onChange={(event) => setPassword(event.target.value)}
+  autoComplete={
+    authMode === "register"
+      ? "new-password"
+      : "current-password"
   }
+  minLength={authMode === "register" ? 8 : undefined}
+  required
+/>
+
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <button type="submit" disabled={loading}>
+          {loading
+            ? "Please wait..."
+            : authMode === "register"
+              ? "Register"
+              : "Sign in"}
+        </button>
+
+        <p>
+          {authMode === "register"
+            ? "Already have an account?"
+            : "Don't have an account?"}
+        </p>
+
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+  setAuthMode(
+    authMode === "register" ? "login" : "register"
+  );
+
+  setName("");
+  setEmail("");
+  setPassword("");
+  setError("");
+}}
+        >
+          {authMode === "register"
+            ? "Sign in"
+            : "Create account"}
+        </button>
+      </form>
+    </div>
+  );
+}
 
   return (
     <div className="workspace">
